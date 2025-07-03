@@ -14,24 +14,24 @@ namespace Offsets
         inline constexpr std::ptrdiff_t dwBoneMatrix = 0x80;
     }
 
-    inline bool Setup( ) 
+    inline bool Setup()
     {
-        auto FindOffsetFromSignature = [ & ]( std::ptrdiff_t& pReturnOffset, std::uintptr_t uAddress, std::uintptr_t uModuleBaseAddress, std::uintptr_t uWantedModuleAddress ) -> bool
-        {
-            pReturnOffset = uWantedModuleAddress + ( uAddress - uModuleBaseAddress );
-            if (!pReturnOffset)
+        auto FindOffsetFromSignature = [&](std::ptrdiff_t& pReturnOffset, std::uintptr_t uAddress, std::uintptr_t uModuleBaseAddress, std::uintptr_t uWantedModuleAddress) -> bool
             {
-                Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
-                Logging::Print("Failed to find {} in {}", uAddress, uWantedModuleAddress);
-                Logging::PopConsoleColor();
-                return false;
-            }
-            
-            return true;
-        };
+                pReturnOffset = uWantedModuleAddress + (uAddress - uModuleBaseAddress);
+                if (!pReturnOffset)
+                {
+                    Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
+                    Logging::Print("Failed to find {} in {}", uAddress, uWantedModuleAddress);
+                    Logging::PopConsoleColor();
+                    return false;
+                }
+
+                return true;
+            };
 
         // Get the client module
-        HMODULE hClientDLL = LoadLibraryExA( Modules::m_pClient.m_strPath.c_str( ), 0, DONT_RESOLVE_DLL_REFERENCES );
+        HMODULE hClientDLL = LoadLibraryExA(Modules::m_pClient.m_strPath.c_str(), 0, DONT_RESOLVE_DLL_REFERENCES);
         // OUR client module address
         std::uintptr_t uClientAddress = reinterpret_cast<std::uintptr_t>(hClientDLL);
 
@@ -41,11 +41,11 @@ namespace Offsets
         FindOffsetFromSignature(Client::dwGlobalVars, g_Memory.ResolveRelativeAddress(g_Memory.PatternScan(hClientDLL, X("48 89 15 ? ? ? ? 48 89 42")), 0x3, 0x7), uClientAddress, Modules::m_pClient.m_uAddress);
         FindOffsetFromSignature(Client::dwViewAngles, g_Memory.ResolveRelativeAddress(g_Memory.PatternScan(hClientDLL, X("48 8B 0D ? ? ? ? 4C 8B C6 8B 10 E8")), 0x3, 0x7, 0x3D0), uClientAddress, Modules::m_pClient.m_uAddress);
 
-	Client::dwViewMatrix = Modules::m_pClient.m_uAddress + 0x1A7F610;
+        Client::dwViewMatrix = Modules::m_pClient.m_uAddress + 0x1A7F610;
 
         // Free the library
-        if ( hClientDLL != 0 )
-            FreeLibrary( hClientDLL );
+        if (hClientDLL != 0)
+            FreeLibrary(hClientDLL);
 
         return true;
     }

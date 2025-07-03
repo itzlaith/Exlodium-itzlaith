@@ -25,11 +25,63 @@ bool Schema::Setup(const wchar_t* wszFileName)
 	// write current date, time and info
 	::WriteFile(hOutFile, szTimeBuffer.Data(), szTimeBuffer.Length(), nullptr, nullptr);
 
-	// Getting base address of interface
-	HMODULE hSchemaSystemDLL = LoadLibraryExA(Modules::m_pSchemaSystem.m_strPath.c_str(), 0, DONT_RESOLVE_DLL_REFERENCES);
-	std::uintptr_t ptrToBaseInterface = Modules::m_pSchemaSystem.m_uAddress + (g_Memory.ResolveRelativeAddress(g_Memory.PatternScan(hSchemaSystemDLL, X("48 8D 05 ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 89 5C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 4C 89 74 24 ?")), 0x3, 0x7) - reinterpret_cast<std::uintptr_t>(hSchemaSystemDLL));
-	FreeLibrary(hSchemaSystemDLL);
-	
+	// Get schema system module info
+	ModuleInfo_t schemaModule = g_Memory.GetModuleAddress("schemasystem.dll");
+	if (schemaModule.m_uAddress == NULL)
+	{
+		Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
+		Logging::Print(X("Failed to get schemasystem.dll module"));
+		Logging::PopConsoleColor();
+		::CloseHandle(hOutFile);
+		return false;
+	}
+
+	// Read PE headers to get module size
+	IMAGE_DOS_HEADER dosHeader = g_Memory.Read<IMAGE_DOS_HEADER>(schemaModule.m_uAddress);
+	if (dosHeader.e_magic != IMAGE_DOS_SIGNATURE)
+	{
+		Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
+		Logging::Print(X("Invalid DOS header for schemasystem.dll"));
+		Logging::PopConsoleColor();
+		::CloseHandle(hOutFile);
+		return false;
+	}
+
+	IMAGE_NT_HEADERS ntHeaders = g_Memory.Read<IMAGE_NT_HEADERS>(schemaModule.m_uAddress + dosHeader.e_lfanew);
+	if (ntHeaders.Signature != IMAGE_NT_SIGNATURE)
+	{
+		Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
+		Logging::Print(X("Invalid NT headers for schemasystem.dll"));
+		Logging::PopConsoleColor();
+		::CloseHandle(hOutFile);
+		return false;
+	}
+
+	DWORD moduleSize = ntHeaders.OptionalHeader.SizeOfImage;
+
+	// Pattern scan in remote process memory
+	std::uintptr_t patternAddress = g_Memory.PatternScanRemote(
+		schemaModule.m_uAddress,
+		moduleSize,
+		X("48 8D 05 ? ? ? ? C3 CC CC CC CC CC CC CC CC 48 89 5C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 4C 89 74 24 ?")
+	);
+
+	if (patternAddress == NULL)
+	{
+		Logging::PushConsoleColor(FOREGROUND_INTENSE_RED);
+		Logging::Print(X("Failed to find pattern in schemasystem.dll"));
+		Logging::PopConsoleColor();
+		::CloseHandle(hOutFile);
+		return false;
+	}
+
+	// Resolve relative address to get base interface
+	std::uintptr_t ptrToBaseInterface = g_Memory.ResolveRelativeAddress(patternAddress, 0x3, 0x7);
+
+	Logging::PushConsoleColor(FOREGROUND_GREEN);
+	Logging::Print(X("Found schema system interface at: 0x{:X}"), ptrToBaseInterface);
+	Logging::PopConsoleColor();
+
 	// Getting 51's element's address in _this ptr. This just some offset for CSchemaSystem class by Valv3
 	std::uintptr_t ptrToListElement = g_Memory.Read<std::uintptr_t>(ptrToBaseInterface + 0x190);
 
@@ -84,9 +136,9 @@ bool Schema::Setup(const wchar_t* wszFileName)
 		Logging::PopConsoleColor();
 	}
 
+	::CloseHandle(hOutFile);
 	return vecSchemaData.size() >= 1;
 }
-
 std::uintptr_t Schema::GetOffset(const FNV1A_t uHashedFieldName)
 {
 	if (const auto it = std::ranges::find_if(vecSchemaData, [uHashedFieldName](const SchemaData_t& data) { return data.m_uHashedFieldName == uHashedFieldName; }); it != vecSchemaData.end())
